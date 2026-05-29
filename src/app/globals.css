@@ -1,0 +1,159 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #07080e;
+  --foreground: #f3f4f6;
+  --font-sans: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body {
+  background: radial-gradient(circle at 50% 0%, #151829 0%, #07080e 70%);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+  margin: 0;
+}
+
+/* 프리미엄 럭셔리 스크롤바 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.01);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* 글래스모피즘 카드 */
+.glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  border-radius: 20px;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 40px 0 rgba(167, 139, 250, 0.15);
+}
+
+/* 무지개 그라데이션 텍스트 */
+.gradient-text {
+  background: linear-gradient(135deg, #a78bfa 10%, #6366f1 50%, #06b6d4 90%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 초친절 가이드 뱃지 */
+.guide-badge {
+  background: rgba(6, 182, 212, 0.15);
+  color: #22d3ee;
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 99px;
+  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 무지개 회전 광채 버튼 (Glowing Button) */
+.glowing-btn {
+  position: relative;
+  border-radius: 14px;
+  z-index: 1;
+  transition: all 0.3s ease;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+}
+
+.glowing-btn::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    from 0deg,
+    #a78bfa,
+    #6366f1,
+    #06b6d4,
+    #34d399,
+    #f43f5e,
+    #a78bfa
+  );
+  animation: rotateGlow 4s linear infinite;
+  z-index: -2;
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+}
+
+.glowing-btn::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  background: #0f1019;
+  border-radius: 13px;
+  z-index: -1;
+}
+
+.glowing-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 25px rgba(99, 102, 241, 0.4);
+}
+
+.glowing-btn:hover::before {
+  opacity: 1;
+}
+
+/* 스켈레톤 로딩 애니메이션 */
+.skeleton-bg {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite linear;
+}
+
+/* 애니메이션 키프레임 */
+@keyframes rotateGlow {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* 실시간 요약 프로그레스 바 */
+.progress-bar-fill {
+  background: linear-gradient(90deg, #6366f1, #06b6d4);
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
