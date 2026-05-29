@@ -102,6 +102,14 @@ export default function Home() {
     }
   };
 
+  // 4-2. 구글 계정 연동 해제 (로그아웃)
+  const handleLogout = () => {
+    setAccessToken('');
+    setUserInfo(null);
+    setVideos([]);
+    setMarkdownResult('');
+  };
+
   // 5. 유튜브 좋아요(LL) 목록 조회
   const fetchLikedVideos = async () => {
     if (!accessToken) {
@@ -388,7 +396,7 @@ tags: [${tagsFormatted}]
         {/* 구글 소셜 로그인 연동 카드 */}
         <div className="flex items-center gap-4">
           {userInfo ? (
-            <div className="glass-card px-5 py-3 flex items-center gap-3">
+            <div className="glass-card px-5 py-3 flex items-center gap-4">
               {userInfo.picture && (
                 <img src={userInfo.picture} alt="프로필" className="w-10 h-10 rounded-full border-2 border-indigo-500/50" />
               )}
@@ -396,6 +404,12 @@ tags: [${tagsFormatted}]
                 <p className="text-sm font-semibold text-white">{userInfo.name} 연동됨</p>
                 <p className="text-xs text-gray-400">{userInfo.email}</p>
               </div>
+              <button 
+                onClick={handleLogout}
+                className="ml-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-rose-500/25 hover:border-rose-500/30 text-xs font-bold text-gray-300 hover:text-rose-200 transition cursor-pointer"
+              >
+                로그아웃
+              </button>
             </div>
           ) : (
             <button 
