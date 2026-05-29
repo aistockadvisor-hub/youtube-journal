@@ -28,10 +28,13 @@ export default function Home() {
   const [googleClient, setGoogleClient] = useState(null);
   const [accessToken, setAccessToken] = useState('');
   const [userInfo, setUserInfo] = useState(null);
+  const [playlists, setPlaylists] = useState([]); // 📂 내 커스텀 재생목록 목록
+  const [selectedPlaylist, setSelectedPlaylist] = useState('LL'); // 선택된 재생목록 ID (기본값 'LL' - 좋아요)
   const [geminiKey, setGeminiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [timeRange, setTimeRange] = useState(24); // 기본 24시간 필터
   const [videos, setVideos] = useState([]);
+  const [selectAll, setSelectAll] = useState(true); // 🎯 전체 선택 여부
   const [loading, setLoading] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [summarizedCount, setSummarizedCount] = useState(0);
@@ -58,6 +61,7 @@ export default function Home() {
             if (response.access_token) {
               setAccessToken(response.access_token);
               fetchUserInfo(response.access_token);
+              fetchPlaylists(response.access_token); // 구글 연동 성공 시 재생목록도 동시 페칭
             }
           },
         });
@@ -93,6 +97,19 @@ export default function Home() {
     }
   };
 
+  // 3-2. 내 커스텀 재생목록 목록 가져오기
+  const fetchPlaylists = async (token) => {
+    try {
+      const res = await fetch('https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setPlaylists(data.items || []);
+    } catch (err) {
+      console.error('유튜브 재생목록 가져오기 실패:', err);
+    }
+  };
+
   // 4. 구글 로그인(OAuth2 팝업) 트리거
   const handleGoogleLogin = () => {
     if (googleClient) {
@@ -106,11 +123,13 @@ export default function Home() {
   const handleLogout = () => {
     setAccessToken('');
     setUserInfo(null);
+    setPlaylists([]);
+    setSelectedPlaylist('LL');
     setVideos([]);
     setMarkdownResult('');
   };
 
-  // 5. 유튜브 좋아요(LL) 목록 조회
+  // 5. 유튜브 좋아요(LL) 및 커스텀 재생목록 동적 수집 조회
   const fetchLikedVideos = async () => {
     if (!accessToken) {
       alert('구글 로그인이 먼저 필요합니다!');
@@ -119,16 +138,17 @@ export default function Home() {
     setLoading(true);
     setVideos([]);
     setMarkdownResult('');
+    setSelectAll(true);
     
     try {
-      // 5-1. Liked Videos playlistItems 조회
-      const res = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=LL&maxResults=50', {
+      // 5-1. 선택된 재생목록(selectedPlaylist)의 playlistItems 조회 (좋아요 'LL' 포함)
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${selectedPlaylist}&maxResults=50`, {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const data = await res.json();
       
       if (!data.items || data.items.length === 0) {
-        alert('조회된 좋아요 영상이 없습니다.');
+        alert('조회된 영상이 없습니다. 다른 보관함을 선택하거나 영상을 담아보세요!');
         setLoading(false);
         return;
       }
@@ -143,7 +163,7 @@ export default function Home() {
       });
 
       if (filteredItems.length === 0) {
-        alert(`최근 ${timeRange}시간 동안 '좋아요'를 누른 영상이 없습니다. 조회 범위를 넓혀보세요!`);
+        alert(`최근 ${timeRange}시간 동안 수집 범위 내에 추가된 영상이 없습니다. 조회 시간 범위를 넓혀보세요!`);
         setLoading(false);
         return;
       }
@@ -168,7 +188,7 @@ export default function Home() {
         };
       });
 
-      // 최종 프론트엔드 바인딩용 데이터 구조 정렬
+      // 최종 프론트엔드 바인딩용 데이터 구조 정렬 (checked: true 속성 기본 장착)
       const finalVideosList = filteredItems.map((item, index) => {
         const vId = item.snippet.resourceId.videoId;
         const details = videoDetailsMap[vId] || { tags: [], categoryName: '기타', description: '' };
@@ -184,7 +204,8 @@ export default function Home() {
           category: details.categoryName,
           description: details.description,
           status: 'ready', // ready ➡️ analyzing ➡️ done
-          summaryText: ''
+          summaryText: '',
+          checked: true // ⚡ 기본적으로 영상 분석 선택 상태 활성화
         };
       });
 
@@ -212,10 +233,40 @@ export default function Home() {
     return msg || '네트워크 연결이 일시적으로 원활하지 않습니다.';
   };
 
-  // 6. 마크다운 최종 조립 함수 (재시도 시에도 실시간 갱신 지원)
+  // 5-4. 비디오 개별 체크박스 토글 연동 함수
+  const toggleVideoCheck = (vId) => {
+    const updated = videos.map(v => v.id === vId ? { ...v, checked: !v.checked } : v);
+    setVideos(updated);
+    
+    // 만약 전부 체크되었는지에 따라 마스터 체크박스 동기화
+    const allChecked = updated.every(v => v.checked);
+    setSelectAll(allChecked);
+    
+    // 이미 결과 마크다운이 조립되어 있다면 실시간 반영
+    if (markdownResult) {
+      rebuildMarkdown(updated);
+    }
+  };
+
+  // 5-5. 마스터 전체 선택/해제 토글 연동 함수
+  const toggleSelectAll = () => {
+    const nextVal = !selectAll;
+    setSelectAll(nextVal);
+    const updated = videos.map(v => ({ ...v, checked: nextVal }));
+    setVideos(updated);
+    
+    if (markdownResult) {
+      rebuildMarkdown(updated);
+    }
+  };
+
+  // 6. 마크다운 최종 조립 함수 (재시도 및 체크박스 필터링 시 실시간 갱신 지원)
   const rebuildMarkdown = (updatedVideos) => {
     const allTags = new Set();
-    updatedVideos.forEach(v => {
+    // ⚡ 체크된(checked === true) 비디오만 필터링하여 RAG 태그 빌드
+    const checkedVideos = updatedVideos.filter(v => v.checked);
+
+    checkedVideos.forEach(v => {
       if (v.status === 'done' || v.status === 'error') {
         const recommendedTags = v.summaryText.match(/#([ㄱ-ㅎㅏ-ㅣ가-힣a-zA-Z0-9_]+)/g) || [];
         recommendedTags.forEach(t => allTags.add(t.replace('#', '')));
@@ -227,26 +278,26 @@ export default function Home() {
 
     let compiledMarkdown = `---
 date: ${todayStr}
-total_videos: ${updatedVideos.length}
+total_videos: ${checkedVideos.length}
 tags: [${tagsFormatted}]
 ---
 
 # 📅 ${todayStr} 유튜브 시청 기록 일지
 
-> 오늘 '좋아요'를 누르고 배운 ${updatedVideos.length}개의 소중한 시청 기록입니다.
+> 오늘 '좋아요'를 누르고 배운 ${checkedVideos.length}개의 소중한 시청 기록입니다.
 
 ---
 
 `;
 
-    updatedVideos.forEach((v, idx) => {
+    checkedVideos.forEach((v, idx) => {
       compiledMarkdown += `## 🎥 ${idx + 1}. ${v.title}\n\n${v.summaryText}\n\n---\n\n`;
     });
 
     setMarkdownResult(compiledMarkdown);
   };
 
-  // 6-2. 전체 Gemini AI 일지 자동 요약 및 생성
+  // 6-2. 전체 Gemini AI 일지 자동 요약 및 생성 (체크된 것만 선별 분석)
   const startAIAnalysis = async () => {
     if (!geminiKey) {
       alert('AI 요약을 위해 Gemini API Key를 입력해 주세요!');
@@ -257,6 +308,12 @@ tags: [${tagsFormatted}]
       return;
     }
 
+    const checkedVideos = videos.filter(v => v.checked);
+    if (checkedVideos.length === 0) {
+      alert('분석 대상으로 선택된(체크된) 영상이 없습니다! 영상을 최소 1개 이상 체크해 주세요.');
+      return;
+    }
+
     setSummarizing(true);
     setSummarizedCount(0);
 
@@ -264,7 +321,13 @@ tags: [${tagsFormatted}]
 
     for (let i = 0; i < updatedVideos.length; i++) {
       const video = updatedVideos[i];
-      // 이미 완료된 영상은 스킵하고 대기 중이거나 에러 상태였던 것만 분석
+
+      // ⚡ 체크 해제된 비디오는 분석 루프에서 제외하고 스킵
+      if (!video.checked) {
+        continue;
+      }
+
+      // 이미 완료된 영상은 스킵하고 분석
       if (video.status === 'done') {
         setSummarizedCount(prev => prev + 1);
         continue;
@@ -479,38 +542,57 @@ tags: [${tagsFormatted}]
           <p className="text-xs text-gray-500">※ 입력한 API 키는 본인의 브라우저 밖으로 절대 전송되지 않고 로컬스토리지에 안전하게 관리됩니다.</p>
         </div>
 
-        {/* 필터링 범위 조정 카드 */}
-        <div className="glass-card p-6 flex flex-col justify-between">
-          <div>
-            <label className="text-white font-bold tracking-tight text-sm block mb-3">🕒 수집 시간 범위 조절</label>
-            <div className="flex gap-2">
-              {[24, 72, 168].map(h => (
-                <button
-                  key={h}
-                  onClick={() => setTimeRange(h)}
-                  className={`flex-1 py-3 text-sm font-semibold rounded-xl transition ${
-                    timeRange === h 
-                      ? 'bg-indigo-600/35 text-indigo-200 border border-indigo-500/50' 
-                      : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
-                  }`}
-                >
-                  {h === 24 ? '최근 24시간' : h === 72 ? '최근 3일' : '최근 1주일'}
-                </button>
-              ))}
+        {/* 📂 보관함 선택 및 수집 필터 카드 (재생목록 통합 고도화) */}
+        <div className="glass-card p-6 flex flex-col justify-between gap-4">
+          <div className="space-y-3">
+            <div>
+              <label className="text-white font-bold tracking-tight text-xs block mb-1.5">📂 분석할 보관함(재생목록) 선택</label>
+              <select
+                value={selectedPlaylist}
+                onChange={(e) => setSelectedPlaylist(e.target.value)}
+                disabled={!accessToken}
+                className="w-full bg-[#0d0e17] border border-white/10 rounded-xl px-3 py-2.5 text-xs text-gray-200 focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+              >
+                <option value="LL">👍 좋아요 표시한 동영상 (기본값)</option>
+                {playlists.map(pl => (
+                  <option key={pl.id} value={pl.id}>
+                    📚 {pl.snippet.title} ({pl.contentDetails?.itemCount || 0}개)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-white font-bold tracking-tight text-xs block mb-1.5">🕒 수집 시간 범위 조절</label>
+              <div className="flex gap-1.5">
+                {[24, 72, 168].map(h => (
+                  <button
+                    key={h}
+                    onClick={() => setTimeRange(h)}
+                    className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
+                      timeRange === h 
+                        ? 'bg-indigo-600/35 text-indigo-200 border border-indigo-500/50' 
+                        : 'bg-white/5 text-gray-400 border border-transparent hover:bg-white/10'
+                    }`}
+                  >
+                    {h === 24 ? '24시간' : h === 72 ? '3일' : '1주일'}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           <button
             onClick={fetchLikedVideos}
             disabled={loading || !accessToken}
-            className="w-full py-3.5 rounded-xl font-black text-sm tracking-wide bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white transition hover:scale-102 active:scale-98 disabled:opacity-40 disabled:pointer-events-none mt-4 flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-xl font-black text-xs tracking-wide bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white transition hover:scale-102 active:scale-98 disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2 cursor-pointer"
           >
             {loading ? (
               <>
-                <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 데이터 가져오는 중...
               </>
-            ) : '유튜브 좋아요 영상 수집하기'}
+            ) : '유튜브 보관함 영상 수집하기'}
           </button>
         </div>
       </section>
@@ -518,14 +600,27 @@ tags: [${tagsFormatted}]
       {/* 실시간 영상 피드 렌더링 */}
       {videos.length > 0 && (
         <section className="py-8 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-extrabold text-white tracking-tight">🎯 분석 대상 영상 ({videos.length}개)</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-extrabold text-white tracking-tight">🎯 분석 대상 영상 ({videos.length}개)</h2>
+              
+              {/* 전체 선택 마스터 체크박스 */}
+              <label className="flex items-center gap-2 text-xs font-bold text-gray-400 cursor-pointer select-none bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg hover:bg-white/10 transition">
+                <input 
+                  type="checkbox" 
+                  checked={selectAll} 
+                  onChange={toggleSelectAll}
+                  className="rounded border-white/20 text-indigo-600 focus:ring-indigo-500/50 bg-[#0d0e17] cursor-pointer"
+                />
+                전체 선택
+              </label>
+            </div>
             
             {!markdownResult && (
               <button
                 onClick={startAIAnalysis}
                 disabled={summarizing}
-                className="px-6 py-3.5 rounded-xl font-extrabold text-sm text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 transition hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-2"
+                className="px-6 py-3.5 rounded-xl font-extrabold text-sm text-white bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 transition hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-2 cursor-pointer"
               >
                 {summarizing ? 'AI 요약본 분석 진행 중...' : '⚡ AI 자동 마크다운 일지 생성'}
               </button>
@@ -536,7 +631,7 @@ tags: [${tagsFormatted}]
             <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden">
               <div 
                 className="progress-bar-fill" 
-                style={{ width: `${(summarizedCount / videos.length) * 100}%` }}
+                style={{ width: `${(summarizedCount / videos.filter(v => v.checked).length) * 100}%` }}
               ></div>
             </div>
           )}
@@ -544,7 +639,22 @@ tags: [${tagsFormatted}]
           {/* 비디오 리스트 카드 그리드 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {videos.map(video => (
-              <div key={video.id} className="glass-card overflow-hidden flex flex-col justify-between">
+              <div 
+                key={video.id} 
+                className={`glass-card overflow-hidden flex flex-col justify-between relative transition-all duration-300 ${
+                  !video.checked ? 'opacity-40 border-dashed border-white/5' : ''
+                }`}
+              >
+                {/* 카드 자체의 개별 선택 체크박스 */}
+                <div className="absolute top-3 left-3 z-10">
+                  <input 
+                    type="checkbox" 
+                    checked={video.checked}
+                    onChange={() => toggleVideoCheck(video.id)}
+                    className="w-5 h-5 rounded-lg border-white/30 text-indigo-600 focus:ring-indigo-500/50 bg-[#07080e]/80 cursor-pointer shadow-lg transition"
+                  />
+                </div>
+
                 <div>
                   {video.thumbnail && (
                     <div className="relative aspect-video w-full overflow-hidden">
@@ -556,41 +666,49 @@ tags: [${tagsFormatted}]
                   )}
                   
                   <div className="p-5 space-y-2">
-                    <h3 className="text-sm font-bold text-white leading-snug line-clamp-2">{video.title}</h3>
-                    <p className="text-xs text-gray-400 font-medium">{video.channelTitle}</p>
+                    <h3 className="text-sm font-bold text-white leading-snug line-clamp-2 pl-4">{video.title}</h3>
+                    <p className="text-xs text-gray-400 font-medium pl-4">{video.channelTitle}</p>
                   </div>
                 </div>
 
                 {/* 상태 렌더러 */}
                 <div className="px-5 pb-5 pt-2 border-t border-white/5 flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-gray-500">상태</span>
-                  {video.status === 'ready' && (
-                    <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-yellow-400"></span> 대기 중
+                  {!video.checked ? (
+                    <span className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-gray-500"></span> 분석 제외됨
                     </span>
-                  )}
-                  {video.status === 'analyzing' && (
-                    <span className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span> AI 요약 중...
-                    </span>
-                  )}
-                  {video.status === 'done' && (
-                    <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span> 요약 완료
-                    </span>
-                  )}
-                  {video.status === 'error' && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-rose-400"></span> 실패 (폴백)
-                      </span>
-                      <button 
-                        onClick={() => retrySingleAnalysis(video.id)}
-                        className="px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-[10px] font-bold text-rose-300 transition cursor-pointer flex items-center gap-1"
-                      >
-                        🔄 재시도
-                      </button>
-                    </div>
+                  ) : (
+                    <>
+                      {video.status === 'ready' && (
+                        <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-yellow-400"></span> 대기 중
+                        </span>
+                      )}
+                      {video.status === 'analyzing' && (
+                        <span className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span> AI 요약 중...
+                        </span>
+                      )}
+                      {video.status === 'done' && (
+                        <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400"></span> 요약 완료
+                        </span>
+                      )}
+                      {video.status === 'error' && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-rose-400"></span> 실패 (폴백)
+                          </span>
+                          <button 
+                            onClick={() => retrySingleAnalysis(video.id)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-[10px] font-bold text-rose-300 transition cursor-pointer flex items-center gap-1"
+                          >
+                            🔄 재시도
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -605,7 +723,7 @@ tags: [${tagsFormatted}]
           <div className="glass-card max-w-xl mx-auto p-8 space-y-4">
             <h2 className="text-2xl font-black text-white gradient-text">🎉 RAG 마크다운 일지 생성 완료!</h2>
             <p className="text-sm text-gray-400 leading-relaxed">
-              최근 {timeRange}시간 동안의 학습 및 기록 요약이 끝났습니다.<br/>
+              선택된 {videos.filter(v => v.checked).length}개 영상에 대한 학습 및 기록 요약이 끝났습니다.<br/>
               아래 다운로드 버튼을 눌러 일지 파일(.md)을 받고 각자의 <strong>옵시디언 볼트 폴더</strong>에 직접 끌어다 넣으세요!
             </p>
 
